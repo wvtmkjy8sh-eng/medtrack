@@ -9,13 +9,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=18">
 <title>MedTrack</title>
 </head>
 <body>
 <button id="installApp" class="pwa-install glass" type="button" hidden aria-label="Instalar MedTrack">Instalar app</button>
 
-<header class="topbar glass">
+<header class="topbar">
   <div class="brand">
     <div class="brand-mark" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M8 3.5h8A1.5 1.5 0 0 1 17.5 5v2.2H19A1.5 1.5 0 0 1 20.5 8.7v10.8A1.5 1.5 0 0 1 19 21H5a1.5 1.5 0 0 1-1.5-1.5V8.7A1.5 1.5 0 0 1 5 7.2h1.5V5A1.5 1.5 0 0 1 8 3.5Zm0 3.7h8V5H8v2.2ZM12 11v6m-3-3h6"/></svg>
@@ -198,10 +198,11 @@
     </div>
     <div class="setting danger-setting">
       <div>
-        <strong>Limpar histórico</strong>
-        <span>Apaga registros de doses e preserva os cadastros.</span>
+        <strong>Carregar arquivo</strong>
+        <span>Importa um JSON de backup ou do registro de atividade.</span>
       </div>
-      <button id="clearHistory" class="danger">Limpar</button>
+      <input id="importJson" type="file" accept="application/json,.json" hidden>
+      <button id="loadJson" class="secondary" type="button">Carregar</button>
       <button id="saveSettings" class="primary settings-save" type="button">Salvar</button>
     </div>
   </div>
@@ -213,11 +214,11 @@
 </section>
 </main>
 
-<button id="fabAdd" class="fab glass" type="button" data-go="register" aria-label="Novo medicamento">
+<button id="fabAdd" class="fab" type="button" data-go="register" aria-label="Novo medicamento">
   <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
 </button>
 
 <div id="toast" class="toast glass" role="status"></div>
-<script src="app.js"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

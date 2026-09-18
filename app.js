@@ -123,7 +123,52 @@ $("#notifyBtn").onclick=async()=>{
   const p=await Notification.requestPermission();$("#notifyBtn").textContent=p==="granted"?"Ativadas":"Ativar";addActivity("notificacoes_permissao",{permission:p});toast(p==="granted"?"Notificações ativadas":"Permissão não concedida");
 };
 $("#reminderMode").onchange=()=>{state.settings.reminderMode=$("#reminderMode").value;save();addActivity("modo_lembrete_alterado",{mode:state.settings.reminderMode})};
-$("#clearHistory").onclick=()=>{if(confirm("Apagar todo o histórico de doses?")){const count=state.history.length;state.history=[];addActivity("historico_doses_limpo",{removed:count});save();renderHistory();renderToday();toast("Histórico apagado")}};
+function applyImportedJson(data){
+  if(data==null) throw new Error("vazio");
+  const raw=Array.isArray(data)?{events:data}:data;
+  if(typeof raw!=="object") throw new Error("formato");
+  const notes=[];
+  if(Array.isArray(raw.events)){
+    localStorage.setItem(ACTIVITY_KEY,JSON.stringify(raw.events.slice(0,500)));
+    notes.push("atividade");
+  }
+  const src=raw.state&&typeof raw.state==="object"?raw.state:raw;
+  const hasMeds=Array.isArray(src.meds);
+  const hasHistory=Array.isArray(src.history);
+  if(hasMeds||hasHistory){
+    if(hasMeds) state.meds=src.meds;
+    if(hasHistory) state.history=src.history;
+    if(src.settings&&typeof src.settings==="object"){
+      state.settings={...state.settings,...src.settings};
+      state.settings.notified??= {};
+      applyTheme(state.settings.theme||"system");
+      const reminder=$("#reminderMode");
+      if(reminder) reminder.value=state.settings.reminderMode||"notification";
+    }
+    save();
+    renderMeds();renderToday();renderHistory();
+    notes.push("dados do app");
+  }
+  if(!notes.length) throw new Error("formato");
+  addActivity("json_carregado",{parts:notes,source:"botao_carregar"});
+  toast("Arquivo carregado");
+}
+$("#loadJson")?.addEventListener("click",()=>$("#importJson")?.click());
+$("#importJson")?.addEventListener("change",async e=>{
+  const file=e.target.files&&e.target.files[0];
+  e.target.value="";
+  if(!file) return;
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    const src=data&&data.state&&typeof data.state==="object"?data.state:data;
+    const overwrites=src&&typeof src==="object"&&(Array.isArray(src.meds)||Array.isArray(src.history));
+    if(overwrites&&!confirm("Isso substitui cadastros e histórico atuais pelos dados do arquivo. Continuar?")) return;
+    applyImportedJson(data);
+  }catch(_){
+    toast("JSON inválido");
+  }
+});
 
 let deferredPrompt;
 window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;$("#installBtn").classList.remove("hidden")});
