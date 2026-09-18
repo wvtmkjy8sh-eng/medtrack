@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=25">
 <title>MedTrack</title>
 </head>
 <body>
@@ -196,14 +196,18 @@
         <option value="visual">Somente visual</option>
       </select>
     </div>
-    <div class="setting danger-setting">
+    <div class="setting data-setting">
       <div>
-        <strong>Carregar arquivo</strong>
-        <span>Importa um JSON de backup ou do registro de atividade.</span>
+        <strong>Backup dos dados</strong>
+        <span>Escolha o JSON, confira o nome e toque em Aplicar para restaurar.</span>
       </div>
-      <input id="importJson" type="file" accept="application/json,.json" hidden>
-      <button id="loadJson" class="secondary" type="button">Carregar</button>
-      <button id="saveSettings" class="primary settings-save" type="button">Salvar</button>
+      <div class="setting-actions">
+        <input id="importJson" class="sr-file" type="file" accept=".json,application/json">
+        <p id="importFileName" class="import-file-name">Nenhum arquivo selecionado</p>
+        <button id="pickJson" class="secondary setting-btn" type="button">Carregar</button>
+        <button id="applyJson" class="primary setting-btn" type="button" disabled>Aplicar</button>
+        <button id="saveSettings" class="secondary setting-btn" type="button">Salvar</button>
+      </div>
     </div>
   </div>
   <div class="system-console">
@@ -218,7 +222,13 @@
   <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
 </button>
 
-<div id="toast" class="toast glass" role="status"></div>
-<script src="app.js?v=17"></script>
+<div id="doseAlarm" class="alarm-banner hidden" role="alertdialog" aria-live="assertive">
+  <div>
+    <strong>Hora da dose</strong>
+    <p id="doseAlarmText">Há medicamentos neste horário.</p>
+  </div>
+  <button id="silenceAlarm" class="primary" type="button">Silenciar</button>
+</div>
+<script src="app.js?v=26"></script>
 </body>
 </html>

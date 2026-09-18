@@ -364,12 +364,76 @@ input:focus,select:focus,textarea:focus{
   margin-top:14px;color:var(--muted);font-size:.72rem;
 }
 .system-console b{color:var(--accent)}
-.danger-setting{flex-wrap:wrap}
-.danger-setting>div{flex:1 1 240px}
-#saveSettings,#loadJson{
-  min-width:108px;height:44px;display:inline-flex;align-items:center;justify-content:center;
+.sr-file{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+.data-setting{
+  flex-direction:column;
+  align-items:stretch;
+  gap:14px;
+}
+.setting-actions{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  width:100%;
+}
+.import-file-name{
+  margin:0;
+  padding:12px 14px;
+  border-radius:14px;
+  background:var(--surface-2);
+  border:1px solid var(--line);
+  color:var(--muted);
+  font-size:.8rem;
+  font-weight:650;
+  line-height:1.35;
+  word-break:break-word;
+}
+.setting-btn{
+  min-height:48px;
+  width:100%;
+  margin:0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  box-sizing:border-box;
+  text-align:center;
 }
 #saveSettings.saved{box-shadow:0 0 0 4px var(--accent-soft)}
+#applyJson:disabled{opacity:.45;cursor:not-allowed}
+
+.alarm-banner{
+  position:fixed;
+  left:12px;
+  right:12px;
+  bottom:calc(var(--nav-h) + 18px + env(safe-area-inset-bottom));
+  z-index:70;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 16px;
+  border-radius:18px;
+  background:color-mix(in srgb,var(--danger) 16%, var(--surface));
+  border:1px solid color-mix(in srgb,var(--danger) 38%, transparent);
+  box-shadow:var(--shadow);
+}
+.alarm-banner.hidden{display:none!important}
+.alarm-banner strong{display:block}
+.alarm-banner p{margin:4px 0 0;color:var(--muted);font-size:.82rem}
+.alarm-banner .primary{flex:0 0 auto;min-height:44px;padding:10px 16px}
+
+@media(min-width:701px){
+  .setting-actions{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+  }
+  .import-file-name,
+  #applyJson{grid-column:1/-1}
+}
 
 .fab{
   position:fixed;right:22px;bottom:calc(var(--nav-h) + 18px);z-index:45;
@@ -399,6 +463,34 @@ input:focus,select:focus,textarea:focus{
   .app{padding-bottom:48px}
   .fab{bottom:28px}
   .toast{bottom:28px}
+  .alarm-banner{bottom:28px}
+}
+
+@media(max-width:1024px){
+  .setting{
+    flex-direction:column;
+    align-items:stretch;
+    gap:12px;
+  }
+  .setting select,
+  #notifyBtn{
+    width:100%;
+    min-width:0;
+    min-height:48px;
+  }
+  .form-actions{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+  .form-actions .primary,
+  .form-actions .secondary{
+    width:100%;
+    min-height:48px;
+    justify-content:center;
+  }
+  .dose-actions{width:100%}
+  .dose-actions button{min-height:44px}
 }
 
 @media(max-width:900px){
@@ -477,7 +569,7 @@ input:focus,select:focus,textarea:focus{
   .tab-icon{width:20px;height:20px}
   .tab-icon svg{width:20px;height:20px}
   .app{padding:16px 14px calc(20px + var(--nav-h) + var(--bottom-safe))}
-  .fab{right:16px;bottom:calc(var(--nav-h) + 16px + env(safe-area-inset-bottom));width:52px;height:52px;border-radius:16px}
+  .fab{right:18px;bottom:calc(var(--nav-h) + 28px + env(safe-area-inset-bottom));width:52px;height:52px;border-radius:16px}
   .toast{bottom:calc(var(--nav-h) + 18px + env(safe-area-inset-bottom));font-size:.8rem}
 }
 
@@ -490,7 +582,7 @@ input:focus,select:focus,textarea:focus{
   .dose-actions{grid-column:2/4}
   .dose-actions button{flex:1;font-size:.76rem;padding:8px 10px}
   .two-col{grid-template-columns:1fr}
-  .setting{align-items:flex-start;flex-direction:column}
+  .setting{align-items:stretch;flex-direction:column}
   .setting select{width:100%}
   .system-console{flex-direction:column}
   .med-card{flex-direction:column}

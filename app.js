@@ -15,8 +15,53 @@ function addActivity(action,details={}){
 const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-const todayKey=()=>new Date().toISOString().slice(0,10);
+const todayKey=()=>{
+  const d=new Date();
+  const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+};
+const localDateKey=d=>{
+  const dt=d instanceof Date?d:new Date(d);
+  if(Number.isNaN(dt.getTime())) return todayKey();
+  const p=n=>String(n).padStart(2,"0");
+  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}`;
+};
+function parseDayKey(value){
+  if(value==null||value==="") return "";
+  const s=String(value).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const dt=new Date(s);
+  if(!Number.isNaN(dt.getTime())) return localDateKey(dt);
+  const iso=s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return iso?iso[1]:"";
+}
 const fmtDate=d=>new Intl.DateTimeFormat("pt-BR",{weekday:"long",day:"2-digit",month:"long"}).format(d);
+const fmtShort=key=>{
+  const day=parseDayKey(key);
+  const [y,m,d]=String(day||key).split("-");
+  if(!d) return key;
+  return `${d}/${m}/${y}`;
+};
+function medStartKey(m){
+  return parseDayKey(m.startDate)||(m.createdAt?localDateKey(m.createdAt):"")||todayKey();
+}
+function daysBetween(startKey,endKey){
+  const start=parseDayKey(startKey);
+  const end=parseDayKey(endKey);
+  if(!start||!end) return NaN;
+  const a=new Date(`${start}T12:00:00`);
+  const b=new Date(`${end}T12:00:00`);
+  return Math.round((b-a)/86400000);
+}
+function isMedScheduledOn(m,dateKey=todayKey()){
+  if(m.active===false) return false;
+  const days=parseInt(m.durationDays,10);
+  if(!Number.isFinite(days)||days<=0) return true;
+  const n=daysBetween(medStartKey(m),dateKey);
+  if(!Number.isFinite(n)||n<0) return true;
+  return n<days;
+}
+function nowTime(){return new Date().toTimeString().slice(0,5)}
 const iconFor=t=>t==="suplemento"||t==="vitamina"?"sup":"med";
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2200)}
 function show(screen){
@@ -31,7 +76,7 @@ function show(screen){
     s.classList.toggle("active",on);
     s.hidden=!on;
   });
-  $("#fabAdd")?.classList.toggle("hidden",screen==="register");
+  $("#fabAdd")?.classList.toggle("hidden",screen==="register"||screen==="settings");
   addActivity("navegacao",{section:screen});
   if(screen==="today")renderToday();
   if(screen==="register")renderMeds();
@@ -47,14 +92,23 @@ function record(m,time,status){
   if(i>=0) state.history[i]=item; else state.history.push(item);
   save();
   addActivity(status==="taken"?"dose_tomada":"dose_pulada",{medId:m.id,medName:m.name,time,status,date:item.date});
+  stopDoseAlarm();
   renderToday(); toast(status==="taken"?"Dose registrada como tomada":"Dose marcada como pulada");
 }
-function getStatus(m,time){return state.history.find(x=>x.key===doseKey(m,time))?.status}
+function getStatus(m,time){
+  const today=todayKey();
+  const hit=state.history.find(x=>{
+    if(String(x.medId)!==String(m.id)||x.time!==time) return false;
+    const local=x.at?localDateKey(x.at):(parseDayKey(x.date)||parseDayKey(String(x.key||"").slice(0,10)));
+    return local===today;
+  });
+  return hit?.status;
+}
 function renderToday(){
-  const now=new Date(), key=todayKey();
+  const now=new Date(), date=todayKey(), clock=nowTime();
   $("#todayDate").textContent=fmtDate(now);
   const doses=[];
-  state.meds.filter(m=>m.active!==false).forEach(m=>(m.times||[]).forEach(time=>doses.push({m,time,status:getStatus(m,time)})));
+  state.meds.filter(m=>isMedScheduledOn(m,date)).forEach(m=>(m.times||[]).forEach(time=>doses.push({m,time,status:getStatus(m,time)})));
   doses.sort((a,b)=>a.time.localeCompare(b.time));
   const taken=doses.filter(x=>x.status==="taken").length, skipped=doses.filter(x=>x.status==="skipped").length;
   $("#scheduledCount").textContent=doses.length;$("#takenCount").textContent=taken;$("#skippedCount").textContent=skipped;
@@ -62,10 +116,10 @@ function renderToday(){
   $("#todayStatus").textContent=doses.length?(pct===100?"Rotina concluída":"Acompanhe suas doses"):"";
   $("#emptyToday").classList.toggle("hidden",doses.length>0);
   $("#todayList").innerHTML=doses.map(({m,time,status})=>{
-    const overdue=!status && time<now.toTimeString().slice(0,5);
+    const overdue=!status && time<clock;
     return `<article class="dose-card ${status?"done":""} ${overdue?"overdue":""}">
       <div class="dose-icon ${iconFor(m.type)}"><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM9 8h6M9 12h6M9 16h4"/></svg></div>
-      <div class="dose-main"><strong>${esc(m.name)}</strong><small>${esc(m.dose||"Dose não informada")} ${m.notes?"· "+esc(m.notes):""}</small></div>
+      <div class="dose-main"><strong>${esc(m.name)}</strong><small>${esc(m.dose||"Dose não informada")} ${m.notes?"· "+esc(m.notes):""}${medDurationLabel(m)?" · "+esc(medDurationLabel(m)):""}</small></div>
       <div class="dose-time">${esc(time)}</div>
       ${status?`<div class="status ${status}">${status==="taken"?"Tomado":"Pulado"}</div>`:`<div class="dose-actions"><button class="take" data-action="take" data-id="${m.id}" data-time="${time}">Tomei</button><button class="skip" data-action="skip" data-id="${m.id}" data-time="${time}">Pular</button></div>`}
     </article>`}).join("");
@@ -86,16 +140,37 @@ $("#medForm").onsubmit=e=>{
   const durationDays=durationRaw?Math.max(1,parseInt(durationRaw,10)||1):"";
   const times=$$("#times input").map(x=>x.value).filter(Boolean).sort();
   if(!times.length)return toast("Informe um horário");
-  if(id){const m=state.meds.find(x=>x.id===id);if(!m)return;Object.assign(m,{name,type,dose,notes,active,times,durationDays});addActivity("medicamento_editado",{medId:m.id,medName:m.name,durationDays})}
-  else {const m={id:uid(),name,type,dose,notes,active,times,durationDays,createdAt:new Date().toISOString()};state.meds.push(m);addActivity("medicamento_cadastrado",{medId:m.id,medName:m.name,durationDays})}
+  if(id){
+    const m=state.meds.find(x=>x.id===id);if(!m)return;
+    Object.assign(m,{name,type,dose,notes,active,times,durationDays});
+    m.startDate=parseDayKey(m.startDate)||medStartKey(m);
+    addActivity("medicamento_editado",{medId:m.id,medName:m.name,durationDays,startDate:m.startDate});
+  } else {
+    const m={id:uid(),name,type,dose,notes,active,times,durationDays,startDate:todayKey(),createdAt:new Date().toISOString()};
+    state.meds.push(m);
+    addActivity("medicamento_cadastrado",{medId:m.id,medName:m.name,durationDays,startDate:m.startDate});
+  }
   save();resetForm();renderMeds();show("today");toast(id?"Medicamento atualizado":"Medicamento cadastrado");
 };
 $("#cancelEdit").onclick=resetForm;
 
+function medDurationLabel(m){
+  const days=parseInt(m.durationDays,10);
+  if(!Number.isFinite(days)||days<=0) return "";
+  const start=medStartKey(m);
+  const n=daysBetween(start,todayKey())+1;
+  const endDate=new Date(`${parseDayKey(start)||todayKey()}T12:00:00`);
+  if(Number.isNaN(endDate.getTime())) return `${days} dias`;
+  endDate.setDate(endDate.getDate()+days-1);
+  const end=localDateKey(endDate);
+  if(!Number.isFinite(n)||n<1) return `${days} dias · até ${fmtShort(end)}`;
+  if(n>days) return `Encerrado em ${fmtShort(end)}`;
+  return `Dia ${n} de ${days} · até ${fmtShort(end)}`;
+}
 function renderMeds(){
   $("#medCount").textContent=state.meds.length;
   $("#medList").innerHTML=state.meds.length?state.meds.map(m=>`<article class="med-card">
-    <div class="med-info"><strong>${esc(m.name)} ${m.active===false?"· inativo":""}</strong><div class="med-meta">${esc(m.type)}${m.dose?" · "+esc(m.dose):""}</div><div class="med-times">${(m.times||[]).map(t=>`<span class="pill">${esc(t)}</span>`).join("")}</div></div>
+    <div class="med-info"><strong>${esc(m.name)} ${m.active===false?"· inativo":""}</strong><div class="med-meta">${esc(m.type)}${m.dose?" · "+esc(m.dose):""}${medDurationLabel(m)?" · "+esc(medDurationLabel(m)):""}</div><div class="med-times">${(m.times||[]).map(t=>`<span class="pill">${esc(t)}</span>`).join("")}</div></div>
     <div class="med-actions"><button class="mini" data-edit="${m.id}">Editar</button><button class="mini" data-delete="${m.id}">Excluir</button></div>
   </article>`).join(""):`<div class="empty"><h3>Nenhum cadastro</h3><p>Seus medicamentos aparecerão aqui.</p></div>`;
   $$("#medList [data-edit]").forEach(b=>b.onclick=()=>editMed(b.dataset.edit));
@@ -119,52 +194,137 @@ function renderHistory(){
 }
 
 $("#notifyBtn").onclick=async()=>{
+  unlockAlarmAudio();
   if(!("Notification"in window))return toast("Seu navegador não oferece notificações");
   const p=await Notification.requestPermission();$("#notifyBtn").textContent=p==="granted"?"Ativadas":"Ativar";addActivity("notificacoes_permissao",{permission:p});toast(p==="granted"?"Notificações ativadas":"Permissão não concedida");
 };
 $("#reminderMode").onchange=()=>{state.settings.reminderMode=$("#reminderMode").value;save();addActivity("modo_lembrete_alterado",{mode:state.settings.reminderMode})};
+
+function backupStamp(d=new Date()){
+  const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+function readBackupEvents(){
+  try{return JSON.parse(localStorage.getItem(ACTIVITY_KEY)||"[]")}catch(_){return []}
+}
+function buildBackup(){
+  return {
+    app:"MedTrack",
+    version:"19.0",
+    exportedAt:new Date().toISOString(),
+    meds:Array.isArray(state.meds)?state.meds:[],
+    history:Array.isArray(state.history)?state.history:[],
+    settings:state.settings||{},
+    events:readBackupEvents()
+  };
+}
+function extractBackup(data){
+  if(data==null) return null;
+  if(Array.isArray(data)){
+    if(data.some(x=>x&&(Array.isArray(x.times)||x.name))) return {meds:data};
+    if(data.some(x=>x&&x.action)) return {events:data};
+    return null;
+  }
+  if(typeof data!=="object") return null;
+  const nested=[data.state,data.data,data.backup,data.payload,data].find(x=>x&&typeof x==="object")||data;
+  const meds=Array.isArray(nested.meds)?nested.meds:Array.isArray(data.meds)?data.meds:null;
+  const history=Array.isArray(nested.history)?nested.history:Array.isArray(data.history)?data.history:null;
+  const settings=nested.settings&&typeof nested.settings==="object"?nested.settings:data.settings&&typeof data.settings==="object"?data.settings:null;
+  const events=Array.isArray(data.events)?data.events:Array.isArray(nested.events)?nested.events:null;
+  if(!meds&&!history&&!settings&&!events) return null;
+  return {meds,history,settings,events};
+}
 function applyImportedJson(data){
-  if(data==null) throw new Error("vazio");
-  const raw=Array.isArray(data)?{events:data}:data;
-  if(typeof raw!=="object") throw new Error("formato");
+  const pack=extractBackup(data);
+  if(!pack) throw new Error("formato");
   const notes=[];
-  if(Array.isArray(raw.events)){
-    localStorage.setItem(ACTIVITY_KEY,JSON.stringify(raw.events.slice(0,500)));
+  if(Array.isArray(pack.events)){
+    localStorage.setItem(ACTIVITY_KEY,JSON.stringify(pack.events.slice(0,500)));
     notes.push("atividade");
   }
-  const src=raw.state&&typeof raw.state==="object"?raw.state:raw;
-  const hasMeds=Array.isArray(src.meds);
-  const hasHistory=Array.isArray(src.history);
-  if(hasMeds||hasHistory){
-    if(hasMeds) state.meds=src.meds;
-    if(hasHistory) state.history=src.history;
-    if(src.settings&&typeof src.settings==="object"){
-      state.settings={...state.settings,...src.settings};
-      state.settings.notified??= {};
-      applyTheme(state.settings.theme||"system");
-      const reminder=$("#reminderMode");
-      if(reminder) reminder.value=state.settings.reminderMode||"notification";
-    }
-    save();
-    renderMeds();renderToday();renderHistory();
-    notes.push("dados do app");
+  if(Array.isArray(pack.meds)){state.meds=pack.meds;notes.push("cadastros")}
+  if(Array.isArray(pack.history)){state.history=pack.history;notes.push("histórico")}
+  if(pack.settings&&typeof pack.settings==="object"){
+    state.settings={...state.settings,...pack.settings};
+    state.settings.notified=state.settings.notified||{};
+    applyTheme(state.settings.theme||"system");
+    const reminder=$("#reminderMode");
+    if(reminder) reminder.value=state.settings.reminderMode||"notification";
+    notes.push("ajustes");
   }
   if(!notes.length) throw new Error("formato");
+  save();
+  renderMeds();
+  renderToday();
+  renderHistory();
   addActivity("json_carregado",{parts:notes,source:"botao_carregar"});
-  toast("Arquivo carregado");
+  if(!Array.isArray(pack.meds)&&!Array.isArray(pack.history)){
+    toast("Este JSON não tem medicamentos. Salve um novo backup.");
+    return;
+  }
+  toast("Dados carregados");
+  show("today");
 }
-$("#loadJson")?.addEventListener("click",()=>$("#importJson")?.click());
-$("#importJson")?.addEventListener("change",async e=>{
+function readFileText(file){
+  if(file&&typeof file.text==="function") return file.text();
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(reader.error||new Error("leitura"));
+    reader.readAsText(file);
+  });
+}
+function triggerJsonDownload(blob,filename){
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=url;
+  link.download=filename;
+  link.rel="noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+function exportBackupFile(){
+  const payload=buildBackup();
+  const filename=`MedTrack-backup-${backupStamp()}.json`;
+  const text=JSON.stringify(payload,null,2);
+  const blob=new Blob([text],{type:"application/json;charset=utf-8"});
+  const file=new File([blob],filename,{type:"application/json"});
+  triggerJsonDownload(blob,filename);
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  if(ios&&navigator.canShare&&navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:"MedTrack"}).catch(()=>{});
+  }
+  return "download";
+}
+
+const importJson=$("#importJson");
+const pickJson=$("#pickJson");
+const applyJson=$("#applyJson");
+const importFileName=$("#importFileName");
+let pendingImportFile=null;
+function setPendingImport(file){
+  pendingImportFile=file||null;
+  if(importFileName) importFileName.textContent=file?file.name:"Nenhum arquivo selecionado";
+  if(applyJson) applyJson.disabled=!file;
+}
+pickJson?.addEventListener("click",()=>{
+  unlockAlarmAudio();
+  importJson?.click();
+});
+importJson?.addEventListener("change",e=>{
   const file=e.target.files&&e.target.files[0];
-  e.target.value="";
-  if(!file) return;
+  setPendingImport(file||null);
+  if(file) toast("Arquivo selecionado. Toque em Aplicar.");
+});
+applyJson?.addEventListener("click",async()=>{
+  if(!pendingImportFile) return toast("Escolha um arquivo JSON primeiro");
   try{
-    const text=await file.text();
-    const data=JSON.parse(text);
-    const src=data&&data.state&&typeof data.state==="object"?data.state:data;
-    const overwrites=src&&typeof src==="object"&&(Array.isArray(src.meds)||Array.isArray(src.history));
-    if(overwrites&&!confirm("Isso substitui cadastros e histórico atuais pelos dados do arquivo. Continuar?")) return;
-    applyImportedJson(data);
+    const text=await readFileText(pendingImportFile);
+    applyImportedJson(JSON.parse(text));
+    if(importJson) importJson.value="";
+    setPendingImport(null);
   }catch(_){
     toast("JSON inválido");
   }
@@ -174,19 +334,88 @@ let deferredPrompt;
 window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;$("#installBtn").classList.remove("hidden")});
 $("#installBtn").onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$("#installBtn").classList.add("hidden")};
 
-async function reminderCheck(){
-  if(state.settings.reminderMode!=="notification"||!("Notification"in window)||Notification.permission!=="granted")return;
-  const now=new Date(),time=now.toTimeString().slice(0,5),key=todayKey()+"|"+time;
-  state.settings.notified??={};
-  if(state.settings.notified[key])return;
-  const due=state.meds.filter(m=>m.active!==false&&(m.times||[]).includes(time)).filter(m=>!getStatus(m,time));
-  if(due.length){new Notification("MedTrack — hora da dose",{body:due.map(m=>`${m.name}${m.dose?" · "+m.dose:""}`).join("\n")});state.settings.notified[key]=true;save()}
+let alarmCtx=null, alarmTimer=null, alarmNodes=[];
+function unlockAlarmAudio(){
+  try{
+    const Ctx=window.AudioContext||window.webkitAudioContext;
+    if(!Ctx) return;
+    alarmCtx=alarmCtx||new Ctx();
+    if(alarmCtx.state==="suspended") alarmCtx.resume();
+  }catch(_){ }
 }
-setInterval(reminderCheck,30000);reminderCheck();
+function stopDoseAlarm(){
+  alarmNodes.forEach(n=>{try{n.stop()}catch(_){ } try{n.disconnect()}catch(_){ }});
+  alarmNodes=[];
+  if(alarmTimer){clearInterval(alarmTimer);alarmTimer=null}
+  $("#doseAlarm")?.classList.add("hidden");
+}
+function beepBurst(){
+  if(!alarmCtx) return;
+  const osc=alarmCtx.createOscillator();
+  const gain=alarmCtx.createGain();
+  osc.type="square";
+  osc.frequency.setValueAtTime(880,alarmCtx.currentTime);
+  osc.frequency.setValueAtTime(1174,alarmCtx.currentTime+0.18);
+  gain.gain.setValueAtTime(0.0001,alarmCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.9,alarmCtx.currentTime+0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001,alarmCtx.currentTime+0.42);
+  osc.connect(gain);gain.connect(alarmCtx.destination);
+  osc.start();
+  osc.stop(alarmCtx.currentTime+0.45);
+  alarmNodes.push(osc,gain);
+}
+function startDoseAlarm(meds){
+  unlockAlarmAudio();
+  const names=meds.map(m=>`${m.name}${m.dose?" · "+m.dose:""}`).join(", ");
+  const text=$("#doseAlarmText");
+  if(text) text.textContent=names||"Há medicamentos neste horário.";
+  $("#doseAlarm")?.classList.remove("hidden");
+  beepBurst();
+  if(alarmTimer) clearInterval(alarmTimer);
+  alarmTimer=setInterval(beepBurst,550);
+  setTimeout(stopDoseAlarm,30000);
+  try{navigator.vibrate&&navigator.vibrate([800,180,800,180,800,180,800,180,800])}catch(_){ }
+}
+$("#silenceAlarm")?.addEventListener("click",()=>{unlockAlarmAudio();stopDoseAlarm()});
+document.addEventListener("pointerdown",unlockAlarmAudio,{once:true});
+
+async function reminderCheck(){
+  const date=todayKey(), clock=nowTime();
+  const nowM=(()=>{const [h,m]=clock.split(":").map(Number);return h*60+m})();
+  state.settings.notified??={};
+  const alarmMeds=[];
+  state.meds.filter(m=>isMedScheduledOn(m,date)).forEach(m=>(m.times||[]).forEach(time=>{
+    const [h,mi]=time.split(":").map(Number);
+    const tM=h*60+mi;
+    if(nowM<tM||nowM-tM>2||getStatus(m,time)) return;
+    const key=doseKey(m,time,date);
+    if(state.settings.notified[key]) return;
+    state.settings.notified[key]=true;
+    alarmMeds.push({...m,_time:time});
+  }));
+  if(!alarmMeds.length) return;
+  save();
+  startDoseAlarm(alarmMeds);
+  if(state.settings.reminderMode!=="visual"&&"Notification"in window&&Notification.permission==="granted"){
+    new Notification("MedTrack — hora da dose",{body:alarmMeds.map(m=>`${m.name}${m.dose?" · "+m.dose:""} · ${m._time}`).join("\n"),requireInteraction:true});
+  }
+}
+setInterval(reminderCheck,5000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden) reminderCheck()});
+reminderCheck();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 $("#reminderMode").value=state.settings.reminderMode||"notification";
 $("#notifyBtn").textContent=("Notification"in window&&Notification.permission==="granted")?"Ativadas":"Ativar";
-addTime();renderMeds();renderToday();
+addTime();
+{
+  let patched=false;
+  state.meds.forEach(m=>{
+    const start=medStartKey(m);
+    if(m.startDate!==start){m.startDate=start;patched=true}
+  });
+  if(patched) save();
+}
+renderMeds();renderToday();
 
 function resolvedTheme(pref){
   if(pref==="light"||pref==="dark") return pref;
@@ -273,73 +502,6 @@ $("#themeMode")?.addEventListener("change",()=>{
    Additive only: existing medication/history/PWA behavior stays intact.
    ========================================================== */
 (() => {
-  const saveSettings = document.getElementById("saveSettings");
-  if (!saveSettings) return;
-
-  function downloadEventLog() {
-    try {
-      const events = JSON.parse(localStorage.getItem(ACTIVITY_KEY) || "[]");
-      const exportedAt = new Date();
-      const pad = n => String(n).padStart(2, "0");
-      const stamp = `${exportedAt.getFullYear()}-${pad(exportedAt.getMonth()+1)}-${pad(exportedAt.getDate())}_${pad(exportedAt.getHours())}-${pad(exportedAt.getMinutes())}-${pad(exportedAt.getSeconds())}`;
-      const payload = {
-        app: "MedTrack",
-        version: "11.0",
-        exportedAt: exportedAt.toISOString(),
-        eventCount: events.length,
-        events
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json;charset=utf-8"});
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `MedTrack-event-log-${stamp}.json`;
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      return true;
-    } catch (err) {
-      console.warn("MedTrack: não foi possível baixar o Event Log.", err);
-      return false;
-    }
-  }
-
-  saveSettings.addEventListener("click", () => {
-    try {
-      state.settings = state.settings || {};
-      state.settings.reminderMode = document.getElementById("reminderMode").value;
-      const themeMode = document.getElementById("themeMode");
-      if (themeMode) {
-        state.settings.theme = themeMode.value;
-        applyTheme(state.settings.theme);
-      }
-      save();
-      addActivity("configuracoes_salvas", {
-        source: "botao_salvar",
-        reminderMode: state.settings.reminderMode,
-        notifications: ("Notification" in window ? Notification.permission : "unsupported")
-      });
-
-      // Export the complete local activity log immediately after saving.
-      // The browser places the file in its normal download location on desktop,
-      // mobile or tablet; no existing app data or functionality is changed.
-      const downloaded = downloadEventLog();
-      addActivity("event_log_baixado", {success: downloaded, source: "botao_salvar"});
-
-      const old = saveSettings.textContent;
-      saveSettings.textContent = "Salvo";
-      saveSettings.classList.add("saved");
-      setTimeout(() => {
-        saveSettings.textContent = old;
-        saveSettings.classList.remove("saved");
-      }, 1200);
-    } catch (err) {
-      console.warn("MedTrack: não foi possível salvar configurações.", err);
-    }
-  });
-
   window.MedTrackActivity = Object.freeze({
     list() {
       try { return JSON.parse(localStorage.getItem(ACTIVITY_KEY) || "[]"); }
@@ -347,3 +509,41 @@ $("#themeMode")?.addEventListener("change",()=>{
     }
   });
 })();
+
+function persistSettings(){
+  state.settings=state.settings||{};
+  const reminderMode=$("#reminderMode");
+  if(reminderMode) state.settings.reminderMode=reminderMode.value;
+  const themeMode=$("#themeMode");
+  if(themeMode){
+    state.settings.theme=themeMode.value;
+    applyTheme(state.settings.theme);
+  }
+  save();
+  addActivity("configuracoes_salvas",{
+    source:"botao_salvar",
+    reminderMode:state.settings.reminderMode,
+    notifications:("Notification"in window?Notification.permission:"unsupported")
+  });
+}
+function onSaveBackup(){
+  try{
+    persistSettings();
+    exportBackupFile();
+    addActivity("backup_exportado",{success:true,source:"botao_salvar"});
+    const saveSettings=$("#saveSettings");
+    if(!saveSettings) return;
+    const old=saveSettings.textContent;
+    saveSettings.textContent="Salvo";
+    saveSettings.classList.add("saved");
+    toast("Backup salvo em JSON");
+    setTimeout(()=>{
+      saveSettings.textContent=old;
+      saveSettings.classList.remove("saved");
+    },1200);
+  }catch(err){
+    console.warn("MedTrack: não foi possível salvar o backup.",err);
+    toast("Não foi possível salvar o JSON");
+  }
+}
+$("#saveSettings").onclick=onSaveBackup;
