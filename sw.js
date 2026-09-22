@@ -1,4 +1,4 @@
-const CACHE="medtrack-v36";
+const CACHE="medtrack-v40";
 const ASSETS=["./","./index.html","./style.css","./app.js","./manifest.json","./icons/icon-192.png","./icons/icon-512.png"];
 const VIBRATE=[400,120,400,120,400,180,800,180,400];
 const IS_IOS=/iphone|ipad|ipod/i.test(self.navigator.userAgent);
@@ -62,7 +62,7 @@ function notifyOptions(payload){
     body:data.body||"Hora de se medicar ou suplementar.",
     icon:"./icons/icon-192.png",
     badge:"./icons/icon-192.png",
-    tag:data.tag||("medtrack-dose-"+Date.now()),
+    tag:data.tag||"medtrack-dose",
     data:{doses:data.doses||[],url:"./"},
     vibrate:data.vibrate||VIBRATE,
     requireInteraction:true,
@@ -112,16 +112,20 @@ async function checkStoredDoses(){
   const due=(schedule.doses||[]).filter(d=>d&&!taken.has(d.key)&&(Number(d.at)||0)<=now);
   if(!due.length) return;
   const last=schedule.lastAlert||{};
-  const fresh=due.filter(d=>!last[d.key]||now-Number(last[d.key])>=3*60*1000);
-  if(!fresh.length) return;
-  fresh.forEach(d=>{last[d.key]=now});
+  const wave=Number(last._wave)||0;
+  if(wave&&now-wave<60*1000) return;
+  const visible=await self.clients.matchAll({type:"window",includeUncontrolled:true}).then(list=>list.some(c=>c.visibilityState==="visible")).catch(()=>false);
+  if(visible) return;
+  due.forEach(d=>{last[d.key]=now});
+  last._wave=now;
   schedule.lastAlert=last;
   await idbSet("schedule",schedule);
-  const body=fresh.map(d=>`${d.name}${d.dose?" · "+d.dose:""} · ${d.time}`).join("\n");
+  const body=due.map(d=>`${d.name}${d.dose?" · "+d.dose:""} · ${d.time}`).join("\n");
   await showDoseNotice({
-    title:fresh.length>1?"MedTrack — horários agora":"MedTrack — hora da dose",
+    title:due.length>1?"MedTrack — horários agora":"MedTrack — hora da dose",
     body,
-    doses:fresh.map(d=>({id:d.id,time:d.time}))
+    tag:"medtrack-dose",
+    doses:due.map(d=>({id:d.id,time:d.time}))
   });
 }
 

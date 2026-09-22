@@ -74,7 +74,10 @@ function toast(msg){const el=$("#toast");if(!el)return;el.textContent=msg;el.cla
 function kindLabel(t){return t==="suplemento"?"suplemento":t==="vitamina"?"vitamina":"medicamento"}
 function kindPhrase(t){return t==="vitamina"?"da vitamina":t==="suplemento"?"do suplemento":"do medicamento"}
 function isIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)}
-function isStandalone(){return window.matchMedia("(display-mode: standalone)").matches||window.navigator.standalone===true}
+function isStandalone(){
+  if(isIOS()) return window.navigator.standalone===true||window.matchMedia("(display-mode: standalone)").matches;
+  return window.matchMedia("(display-mode: standalone)").matches||window.matchMedia("(display-mode: fullscreen)").matches;
+}
 function urlBase64ToUint8Array(base64String){
   const padding="=".repeat((4-base64String.length%4)%4);
   const base64=(base64String+padding).replace(/-/g,"+").replace(/_/g,"/");
@@ -254,22 +257,28 @@ async function enableSystemAlerts(){
   const p=await Notification.requestPermission();
   $("#notifyBtn").textContent=p==="granted"?"Ativadas":"Ativar";
   addActivity("notificacoes_permissao",{permission:p});
-  if(p==="granted"){
-    await enableBackgroundPush();
-    await syncReminders();
+  if(p!=="granted"){
     updateAlertSetup();
-    toast("Alertas do sistema ativados. Vou te chamar com a tela desligada.");
-  }else{
-    updateAlertSetup();
-    toast("Permissão não concedida");
+    return toast("Permissão não concedida. Em Ajustes do iPhone, permita notificações do MedTrack.");
   }
+  const sub=await enableBackgroundPush(true);
+  if(!(sub&&sub.endpoint)){
+    delete state.settings.pushEndpoint;
+    localStorage.setItem(KEY,JSON.stringify(state));
+    updateAlertSetup();
+    $("#notifyBtn").textContent="Ativar";
+    return toast("A permissão existe, mas o alerta ainda não registrou. Feche o app, abra pelo ícone e toque de novo.");
+  }
+  await syncReminders(true);
+  updateAlertSetup();
+  toast("Pronto. Deve chegar um aviso de teste agora. Se não chegar, permita o som do MedTrack em Ajustes.");
 }
 $("#notifyBtn").onclick=()=>enableSystemAlerts();
 $("#pwaAlertBtn")?.addEventListener("click",()=>enableSystemAlerts());
 function updateAlertSetup(){
   const box=$("#pwaAlertSetup"), title=$("#pwaAlertTitle"), text=$("#pwaAlertText"), btn=$("#pwaAlertBtn");
   if(!box) return;
-  const granted=("Notification"in window&&Notification.permission==="granted"&&state.settings.pushEndpoint);
+  const granted=("Notification"in window&&Notification.permission==="granted"&&state.settings.pushEndpoint&&state.settings.pushOrigin===location.origin);
   if(granted){box.classList.add("hidden");return}
   box.classList.remove("hidden");
   if(isIOS()&&!isStandalone()){
@@ -278,7 +287,7 @@ function updateAlertSetup(){
     if(btn) btn.textContent="Como instalar";
   }else{
     if(title) title.textContent="Alertas com a tela desligada";
-    if(text) text.textContent="Ative as notificações do sistema. Assim eu te chamo na aba de notificações, mesmo com o celular bloqueado.";
+    if(text) text.textContent="Ative aqui no app instalado. O bipe interno só toca com o app aberto; o aviso de verdade chega na Central de Notificações com a tela desligada.";
     if(btn) btn.textContent="Ativar alertas";
   }
 }
@@ -420,7 +429,7 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPro
 $("#installBtn").onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$("#installBtn").classList.add("hidden")};
 
 let alarmCtx=null, alarmTimer=null, alarmStopTimer=null, alarmNotifyTimer=null, alarmNodes=[], pendingAlarmDoses=[];
-const REALERT_MS=3*60*1000;
+const REALERT_MS=60*1000;
 const VIBRATE_PATTERN=[400,120,400,120,400,180,800,180,400];
 function unlockAlarmAudio(){
   try{
@@ -563,7 +572,7 @@ $("#silenceAlarm")?.addEventListener("click",()=>{
   unlockAlarmAudio();
   markAlarmNotified(pendingAlarmDoses);
   stopDoseAlarm();
-  toast("Tudo bem. Te chamo de novo em alguns minutos se ainda não registrar.");
+  toast("Tudo bem. Te chamo de novo em 1 minuto se ainda não registrar.");
 });
 $("#alarmTake")?.addEventListener("click",()=>{unlockAlarmAudio();applyAlarmRecords("taken")});
 $("#alarmSkip")?.addEventListener("click",()=>{unlockAlarmAudio();applyAlarmRecords("skipped")});
@@ -600,7 +609,7 @@ async function pushDoseNotification(alarmMeds){
     body,
     icon:"./icons/icon-192.png",
     badge:"./icons/icon-192.png",
-    tag:"medtrack-dose-"+Date.now(),
+    tag:"medtrack-dose",
     data:{doses:alarmMeds.map(m=>({id:m.id,time:m._time}))},
     vibrate:VIBRATE_PATTERN,
     requireInteraction:true,
@@ -617,6 +626,7 @@ async function pushDoseNotification(alarmMeds){
   }
 }
 async function scheduleUpcomingNotifications(){
+  if(state.settings.pushEndpoint) return;
   if(!("Notification"in window)||Notification.permission!=="granted") return;
   if(!("serviceWorker"in navigator)) return;
   const now=Date.now();
@@ -646,14 +656,34 @@ async function scheduleUpcomingNotifications(){
     });
   }catch(_){ }
 }
-async function enableBackgroundPush(){
+async function waitForServiceWorker(){
+  if(!("serviceWorker"in navigator)) return null;
+  const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(()=>null);
+  if(!reg) return null;
+  try{await reg.update()}catch(_){ }
+  await navigator.serviceWorker.ready;
+  if(!navigator.serviceWorker.controller){
+    await new Promise(resolve=>{
+      const t=setTimeout(resolve,2500);
+      navigator.serviceWorker.addEventListener("controllerchange",()=>{clearTimeout(t);resolve()},{once:true});
+    });
+  }
+  return navigator.serviceWorker.ready;
+}
+async function enableBackgroundPush(forceNew=false){
   if(!("serviceWorker"in navigator)||!("PushManager"in window)) return false;
   if(Notification.permission!=="granted") return false;
   try{
-    const reg=await navigator.serviceWorker.ready;
-    const vapid=await fetch("sync.php?vapid=1",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}));
+    const reg=await waitForServiceWorker();
+    if(!reg) return false;
+    const vapid=await fetch("./sync.php?vapid=1",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}));
     if(!vapid.publicKey) return false;
+    if(state.settings.pushOrigin&&state.settings.pushOrigin!==location.origin) forceNew=true;
     let sub=await reg.pushManager.getSubscription();
+    if(forceNew&&sub){
+      try{await sub.unsubscribe()}catch(_){ }
+      sub=null;
+    }
     if(!sub){
       sub=await reg.pushManager.subscribe({
         userVisibleOnly:true,
@@ -667,6 +697,7 @@ async function enableBackgroundPush(){
       try{await reg.sync.register("medtrack-dose-check")}catch(_){ }
     }
     state.settings.pushEndpoint=sub.endpoint;
+    state.settings.pushOrigin=location.origin;
     localStorage.setItem(KEY,JSON.stringify(state));
     return sub;
   }catch(err){
@@ -674,7 +705,7 @@ async function enableBackgroundPush(){
     return false;
   }
 }
-async function syncReminders(){
+async function syncReminders(sendTest=false){
   const pack=upcomingDosePayload();
   const schedule={...pack,reminderMode:state.settings.reminderMode||"notification"};
   if("serviceWorker"in navigator){
@@ -698,7 +729,9 @@ async function syncReminders(){
         meds:state.meds,
         history:state.history,
         settings:state.settings,
-        updatedAtMs:stamp
+        updatedAtMs:stamp,
+        test:!!sendTest,
+        replaceSubscriptions:true
       })
     });
   }catch(_){ }
@@ -716,8 +749,12 @@ async function hydrateFromServer(){
     state.meds=remoteMeds;
     if(Array.isArray(remote.history)) state.history=remote.history;
     if(remote.settings&&typeof remote.settings==="object"){
+      const keepEndpoint=state.settings.pushEndpoint;
+      const keepOrigin=state.settings.pushOrigin;
       state.settings={...state.settings,...remote.settings};
       state.settings.notified=state.settings.notified||{};
+      if(keepEndpoint) state.settings.pushEndpoint=keepEndpoint;
+      if(keepOrigin) state.settings.pushOrigin=keepOrigin;
     }
     state.settings.cloudUpdatedAt=remoteStamp||Date.now();
     save();
@@ -745,7 +782,7 @@ async function reminderCheck(){
   if(!document.hidden) startDoseAlarm(due);
   if(!fresh.length) return;
   markAlarmNotified(fresh);
-  await pushDoseNotification(fresh);
+  if(document.hidden&&!state.settings.pushEndpoint) await pushDoseNotification(fresh);
   addActivity("alerta_dose",{count:fresh.length,names:fresh.map(m=>m.name)});
 }
 if("serviceWorker"in navigator){

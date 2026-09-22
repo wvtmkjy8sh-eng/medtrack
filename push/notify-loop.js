@@ -6,7 +6,7 @@ const dataDir = path.join(root, "data");
 const vapidFile = path.join(dataDir, "vapid.json");
 const stateFile = path.join(dataDir, "push-state.json");
 const sentFile = path.join(dataDir, "push-sent.json");
-const REALERT_MS = 3 * 60 * 1000;
+const REALERT_MS = 60 * 1000;
 const LEAD_MS = 800;
 const VIBRATE = [400, 120, 400, 120, 400, 180, 800, 180, 400];
 
@@ -38,12 +38,66 @@ async function main() {
 
   let sending = false;
   let nextTimer = null;
+  const testFile = path.join(dataDir, "push-test.json");
+
+  const uniqueSubs = (subs) => {
+    const seen = new Set();
+    return (Array.isArray(subs) ? subs : []).filter((s) => {
+      if (!s || !s.endpoint || seen.has(s.endpoint)) return false;
+      seen.add(s.endpoint);
+      return true;
+    });
+  };
+
+  const sendToSubs = async (subs, payload) => {
+    let delivered = 0;
+    const state = readJson(stateFile, {});
+    for (const sub of uniqueSubs(subs)) {
+      try {
+        await webpush.sendNotification(sub, payload, {
+          TTL: 60,
+          urgency: "high",
+          headers: { Urgency: "high" },
+        });
+        delivered += 1;
+      } catch (err) {
+        const code = err && err.statusCode;
+        console.warn("push failed", code || err.message, err.body || "");
+        if (code === 404 || code === 410) {
+          state.subscriptions = (state.subscriptions || []).filter((s) => s.endpoint !== sub.endpoint);
+          writeJson(stateFile, state);
+        }
+      }
+    }
+    return delivered;
+  };
+
+  const sendTest = async () => {
+    if (!fs.existsSync(testFile)) return;
+    const extra = readJson(testFile, {});
+    try { fs.unlinkSync(testFile); } catch (_) {}
+    const state = readJson(stateFile, {});
+    const subs = Array.isArray(state.subscriptions) ? state.subscriptions : [];
+    if (!subs.length) {
+      console.warn("test push skipped: no subscription");
+      return;
+    }
+    const delivered = await sendToSubs(subs, JSON.stringify({
+      title: extra.title || "Alertas ativados",
+      body: extra.body || "O MedTrack consegue te chamar com a tela desligada.",
+      tag: "medtrack-test",
+      vibrate: VIBRATE,
+      silent: false,
+      sound: "default",
+    }));
+    console.log("test push", delivered);
+  };
 
   const sendDue = async () => {
     if (sending) return;
     const state = readJson(stateFile, {});
     if ((state.reminderMode || "notification") === "visual") return;
-    const subs = Array.isArray(state.subscriptions) ? state.subscriptions : [];
+    const subs = uniqueSubs(state.subscriptions);
     const doses = Array.isArray(state.doses) ? state.doses : [];
     const taken = new Set(Array.isArray(state.taken) ? state.taken : []);
     if (!subs.length || !doses.length) return;
@@ -55,22 +109,19 @@ async function main() {
     });
     if (!due.length) return;
     const sent = readJson(sentFile, {});
-    const fresh = due.filter((d) => {
-      const last = Number(sent[d.key]) || 0;
-      return !last || now - last >= REALERT_MS;
-    });
-    if (!fresh.length) return;
+    const lastWave = Number(sent._wave) || 0;
+    if (lastWave && now - lastWave < REALERT_MS) return;
     sending = true;
-    const title = fresh.length > 1 ? `Hora de ${fresh.length} doses` : `Hora de tomar ${fresh[0].name}`;
-    const body = fresh.map((d) => `${d.name}${d.dose ? " · " + d.dose : ""} · ${d.time}`).join("\n");
+    const title = due.length > 1 ? `Hora de ${due.length} doses` : `Hora de tomar ${due[0].name}`;
+    const body = due.map((d) => `${d.name}${d.dose ? " · " + d.dose : ""} · ${d.time}`).join("\n");
     const payload = JSON.stringify({
       title,
       body,
-      tag: "medtrack-dose-" + Date.now(),
+      tag: "medtrack-dose",
       vibrate: VIBRATE,
       silent: false,
       sound: "default",
-      doses: fresh.map((d) => ({ id: d.id, time: d.time })),
+      doses: due.map((d) => ({ id: d.id, time: d.time })),
     });
     let delivered = 0;
     for (const sub of subs) {
@@ -91,12 +142,14 @@ async function main() {
       }
     }
     if (delivered) {
-      fresh.forEach((d) => { sent[d.key] = now; });
+      sent._wave = now;
+      due.forEach((d) => { sent[d.key] = now; });
       Object.keys(sent).forEach((k) => {
+        if (k === "_wave") return;
         if (now - Number(sent[k] || 0) > 48 * 3600 * 1000) delete sent[k];
       });
       writeJson(sentFile, sent);
-      console.log("push sent", delivered, fresh.map((d) => d.name).join(", "));
+      console.log("push sent", delivered, due.map((d) => d.name).join(", "));
     } else {
       console.warn("push not delivered, will retry");
     }
@@ -108,22 +161,25 @@ async function main() {
     const state = readJson(stateFile, {});
     const taken = new Set(Array.isArray(state.taken) ? state.taken : []);
     const now = Date.now();
-    const next = (Array.isArray(state.doses) ? state.doses : [])
-      .filter((d) => d && !taken.has(d.key))
-      .map((d) => Number(d.at) || 0)
-      .filter((at) => at > now - LEAD_MS)
-      .sort((a, b) => a - b)[0];
-    if (!next) return;
-    const wait = Math.max(0, next - now - LEAD_MS);
+    const open = (Array.isArray(state.doses) ? state.doses : []).filter((d) => d && !taken.has(d.key));
+    const dueNow = open.filter((d) => (Number(d.at) || 0) <= now + LEAD_MS);
+    const next = open.map((d) => Number(d.at) || 0).filter((at) => at > now - LEAD_MS).sort((a, b) => a - b)[0];
+    const lastWave = Number(readJson(sentFile, {})._wave) || 0;
+    let wait = null;
+    if (dueNow.length) wait = lastWave ? Math.max(0, lastWave + REALERT_MS - now) : 0;
+    else if (next) wait = Math.max(0, next - now - LEAD_MS);
+    if (wait == null) return;
     nextTimer = setTimeout(() => {
       sendDue().catch((err) => console.warn(err)).finally(armNext);
     }, wait);
   };
 
   setInterval(() => {
+    sendTest().catch((err) => console.warn(err));
     sendDue().catch((err) => console.warn(err));
     armNext();
   }, 2000);
+  sendTest().catch((err) => console.warn(err));
   sendDue().catch((err) => console.warn(err));
   armNext();
 }

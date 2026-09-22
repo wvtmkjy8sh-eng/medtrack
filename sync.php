@@ -35,10 +35,14 @@ if (!is_array($incoming)) {
 $current = read_json($stateFile, []);
 $subs = isset($current["subscriptions"]) && is_array($current["subscriptions"]) ? $current["subscriptions"] : [];
 if (!empty($incoming["subscription"]["endpoint"])) {
-  $subs = array_values(array_filter($subs, function ($s) use ($incoming) {
-    return ($s["endpoint"] ?? "") !== $incoming["subscription"]["endpoint"];
-  }));
-  $subs[] = $incoming["subscription"];
+  if (!empty($incoming["replaceSubscriptions"])) {
+    $subs = [$incoming["subscription"]];
+  } else {
+    $subs = array_values(array_filter($subs, function ($s) use ($incoming) {
+      return ($s["endpoint"] ?? "") !== $incoming["subscription"]["endpoint"];
+    }));
+    $subs[] = $incoming["subscription"];
+  }
 }
 if (isset($incoming["subscriptions"]) && is_array($incoming["subscriptions"])) {
   $subs = $incoming["subscriptions"];
@@ -56,4 +60,8 @@ $state = [
   "reminderMode" => $incoming["reminderMode"] ?? ($current["reminderMode"] ?? "notification"),
 ];
 file_put_contents($stateFile, json_encode($state, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-echo json_encode(["ok" => true, "subscriptions" => count($subs)]);
+if (!empty($incoming["test"]) || !empty($incoming["urgent"])) {
+  $payload = is_array($incoming["urgent"] ?? null) ? $incoming["urgent"] : ["title" => "Alertas ativados", "body" => "O MedTrack consegue te chamar com a tela desligada."];
+  file_put_contents($dir . DIRECTORY_SEPARATOR . "push-test.json", json_encode($payload));
+}
+echo json_encode(["ok" => true, "subscriptions" => count($subs), "test" => !empty($incoming["test"])]);
