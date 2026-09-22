@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark" data-theme-pref="system">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MedTrack">
+<meta name="description" content="MedTrack — controle diário de medicamentos e suplementos.">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=36">
+<title>MedTrack</title>
+<script>
+if("serviceWorker"in navigator){
+  navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(function(){});
+}
+</script>
+</head>
+<body>
+<button id="installApp" class="pwa-install glass" type="button" hidden aria-label="Instalar MedTrack">Instalar app</button>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M8 3.5h8A1.5 1.5 0 0 1 17.5 5v2.2H19A1.5 1.5 0 0 1 20.5 8.7v10.8A1.5 1.5 0 0 1 19 21H5a1.5 1.5 0 0 1-1.5-1.5V8.7A1.5 1.5 0 0 1 5 7.2h1.5V5A1.5 1.5 0 0 1 8 3.5Zm0 3.7h8V5H8v2.2ZM12 11v6m-3-3h6"/></svg>
+    </div>
+    <div>
+      <strong>Med<span>Track</span></strong>
+      <small>Controle de medicamentos</small>
+    </div>
+  </div>
+
+  <nav class="app-nav" aria-label="Navegação principal">
+    <button class="tab active" data-screen="today">
+      <span class="tab-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M7 4.5h10A1.5 1.5 0 0 1 18.5 6v12.5A1.5 1.5 0 0 1 17 20H7a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 7 4.5ZM8 3v3M16 3v3M5.5 9.5h13M9 13.2l2 2 4.2-4.2"/></svg>
+      </span>
+      <b>Hoje</b>
+    </button>
+    <button class="tab" data-screen="register">
+      <span class="tab-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M8 4h8v16H8zM10 8h4M10 12h4M10 16h3M12 8v8"/></svg>
+      </span>
+      <b>Cadastro</b>
+    </button>
+    <button class="tab" data-screen="history">
+      <span class="tab-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M4.8 12a7.2 7.2 0 1 0 2-5.1M5 5.2v4.3h4.3M12 8v4.2l2.8 1.7"/></svg>
+      </span>
+      <b>Histórico</b>
+    </button>
+    <button class="tab" data-screen="settings">
+      <span class="tab-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Zm7.6 3.6.9.8-1.3 2.3-1.3-.5a6.6 6.6 0 0 1-1.1.7l-.2 1.4h-2.8l-.2-1.4a6.6 6.6 0 0 1-1.1-.7l-1.3.5-1.3-2.3.9-.8a6.8 6.8 0 0 1 0-1.6l-.9-.8 1.3-2.3 1.3.5a6.6 6.6 0 0 1 1.1-.7l.2-1.4h2.8l.2 1.4a6.6 6.6 0 0 1 1.1.7l1.3-.5 1.3 2.3-.9.8c.1.5.1 1.1 0 1.6Z"/></svg>
+      </span>
+      <b>Ajustes</b>
+    </button>
+  </nav>
+
+  <div class="header-actions">
+    <button id="themeToggle" class="icon-btn" type="button" title="Alternar tema" aria-label="Alternar tema claro e escuro">
+      <svg class="icon-sun" viewBox="0 0 24 24"><path d="M12 17.2A5.2 5.2 0 1 0 12 6.8a5.2 5.2 0 0 0 0 10.4ZM12 3.2v1.7M12 19.1v1.7M4.9 4.9l1.2 1.2M17.9 17.9l1.2 1.2M3.2 12h1.7M19.1 12h1.7M4.9 19.1l1.2-1.2M17.9 6.1l1.2-1.2"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24"><path d="M16.8 13.4A6.4 6.4 0 0 1 10.3 5 7.2 7.2 0 1 0 19 14.8a6.3 6.3 0 0 1-2.2-1.4Z"/></svg>
+    </button>
+    <button id="installBtn" class="icon-btn hidden" title="Instalar aplicativo" aria-label="Instalar aplicativo">
+      <svg viewBox="0 0 24 24"><path d="M12 3.5v11m0 0 3.6-3.6M12 14.5 8.4 10.9M5.5 17.5v3h13v-3"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="app">
+<section id="today" class="screen active">
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">Rotina de hoje</p>
+      <h1 id="todayDate">Hoje</h1>
+      <p id="todaySubtitle">Acompanhe cada dose com clareza, no horário certo.</p>
+    </div>
+    <div class="progress-hud">
+      <div class="progress-ring" id="progressRing"><span id="progressText">0%</span></div>
+      <small>Concluído</small>
+    </div>
+  </div>
+
+  <div id="pwaAlertSetup" class="pwa-setup hidden">
+    <div>
+      <strong id="pwaAlertTitle">Alertas com a tela desligada</strong>
+      <p id="pwaAlertText">Ative as notificações do sistema no app instalado para eu te chamar na hora da dose.</p>
+    </div>
+    <button id="pwaAlertBtn" class="primary" type="button">Ativar alertas</button>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card"><span>Programadas</span><strong id="scheduledCount">0</strong><em>Agenda</em></div>
+    <div class="summary-card success"><span>Tomadas</span><strong id="takenCount">0</strong><em>Concluídas</em></div>
+    <div class="summary-card warning"><span>Puladas</span><strong id="skippedCount">0</strong><em>Atenção</em></div>
+  </div>
+
+  <div class="section-title">
+    <div>
+      <p class="eyebrow">Timeline</p>
+      <h2>Doses de hoje</h2>
+    </div>
+    <span id="todayStatus" class="live-label">Ao vivo</span>
+  </div>
+  <div id="todayList" class="dose-list"></div>
+
+  <div id="emptyToday" class="empty hidden">
+    <div class="empty-icon">
+      <svg viewBox="0 0 24 24"><path d="M6 8.2h12V19H6zM8.5 8.2V5.5h7v2.7M9.5 12.2h5M9.5 15.2h3.5"/></svg>
+    </div>
+    <h3>Nenhum medicamento ativo</h3>
+    <p>Cadastre um protocolo para montar a rotina do dia.</p>
+    <button class="primary" data-go="register">Adicionar medicamento</button>
+  </div>
+</section>
+
+<section id="register" class="screen" hidden>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Cadastro</p>
+      <h1 id="formTitle">Novo medicamento</h1>
+      <p>Nome, dose e horários. Tudo o que entra na rotina de hoje.</p>
+    </div>
+  </div>
+  <form id="medForm" class="card form-card">
+    <div class="form-section-title">Identificação <span>01</span></div>
+    <input type="hidden" id="medId">
+    <label>Nome do medicamento / suplemento<input id="name" required maxlength="80" placeholder="Ex.: Vitamina D"></label>
+    <div class="two-col">
+      <label>Categoria<select id="type"><option value="medicamento">Medicamento</option><option value="suplemento">Suplemento</option><option value="vitamina">Vitamina</option><option value="outro">Outro</option></select></label>
+      <label>Dose<input id="dose" maxlength="40" placeholder="Ex.: 1 comprimido"></label>
+    </div>
+    <div class="form-section-title">Horários <span>02</span></div>
+    <label>Horários<div id="times" class="times"></div><button type="button" id="addTime" class="secondary small">Adicionar horário</button></label>
+    <label>Observações<textarea id="notes" rows="3" maxlength="250" placeholder="Ex.: após o almoço"></textarea></label>
+    <label class="field">
+      <span>Quantidade de dias de uso</span>
+      <input id="durationDays" name="durationDays" type="number" min="1" step="1" inputmode="numeric" placeholder="Ex.: 30">
+      <small>Deixe em branco para uso sem data de término.</small>
+    </label>
+    <label class="switch-row"><span><b>Protocolo ativo</b><small>Participa da rotina diária</small></span><input id="active" type="checkbox" checked><i></i></label>
+    <div class="form-actions">
+      <button type="button" id="cancelEdit" class="secondary hidden">Cancelar</button>
+      <button class="primary" type="submit" id="saveBtn">Salvar medicamento</button>
+    </div>
+  </form>
+  <div class="section-title">
+    <div>
+      <p class="eyebrow">Lista</p>
+      <h2>Protocolos cadastrados</h2>
+    </div>
+    <span id="medCount">0</span>
+  </div>
+  <div id="medList" class="med-list"></div>
+</section>
+
+<section id="history" class="screen" hidden>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Registros</p>
+      <h1>Histórico</h1>
+      <p>Tomados e pulados, do mais recente ao mais antigo.</p>
+    </div>
+  </div>
+  <div class="filters glass" role="tablist" aria-label="Filtrar histórico">
+    <button class="filter active" data-filter="all">Todos</button>
+    <button class="filter" data-filter="taken">Tomados</button>
+    <button class="filter" data-filter="skipped">Pulados</button>
+  </div>
+  <div id="historyList" class="history-list"></div>
+</section>
+
+<section id="settings" class="screen" hidden>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Sistema</p>
+      <h1>Configurações</h1>
+      <p>Tema, alertas e backup dos seus dados neste aparelho.</p>
+    </div>
+  </div>
+  <div class="settings-list card">
+    <div class="setting">
+      <div>
+        <strong>Aparência</strong>
+        <span>Tema claro, escuro ou automático.</span>
+      </div>
+      <select id="themeMode">
+        <option value="system">Sistema</option>
+        <option value="light">Claro</option>
+        <option value="dark">Escuro</option>
+      </select>
+    </div>
+    <div class="setting">
+      <div>
+        <strong>Notificações</strong>
+        <span>No celular, instale o app e ative aqui para alertar mesmo fechado.</span>
+      </div>
+      <button id="notifyBtn" class="secondary">Ativar</button>
+    </div>
+    <div class="setting">
+      <div>
+        <strong>Modo de lembrete</strong>
+        <span>Notificação do sistema ou só o alerta no app (som + vibração).</span>
+      </div>
+      <select id="reminderMode">
+        <option value="notification">Notificação</option>
+        <option value="visual">Somente visual</option>
+      </select>
+    </div>
+    <div class="setting data-setting">
+      <div>
+        <strong>Backup dos dados</strong>
+        <span>Escolha o JSON, confira o nome e toque em Aplicar para restaurar.</span>
+      </div>
+      <div class="setting-actions">
+        <input id="importJson" class="sr-file" type="file" accept=".json,application/json">
+        <p id="importFileName" class="import-file-name">Nenhum arquivo selecionado</p>
+        <button id="pickJson" class="secondary setting-btn" type="button">Carregar</button>
+        <button id="applyJson" class="primary setting-btn" type="button" disabled>Aplicar</button>
+        <button id="saveSettings" class="secondary setting-btn" type="button">Salvar</button>
+      </div>
+    </div>
+  </div>
+  <div class="system-console">
+    <span>MedTrack v13</span>
+    <span>Armazenamento: <b>local</b></span>
+    <span>Dados: <b>neste dispositivo</b></span>
+  </div>
+</section>
+</main>
+
+<button id="fabAdd" class="fab" type="button" data-go="register" aria-label="Novo medicamento">
+  <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+</button>
+
+<div id="doseAlarm" class="alarm-overlay hidden" role="alertdialog" aria-live="assertive" aria-labelledby="doseAlarmTitle">
+  <div class="alarm-sheet">
+    <p class="alarm-kicker">Lembrete de agora</p>
+    <strong id="doseAlarmTitle">Hora da dose</strong>
+    <p id="doseAlarmText">Registre quando tomar para eu acompanhar com você.</p>
+    <div class="alarm-actions">
+      <button id="alarmTake" class="take" type="button">Tomei</button>
+      <button id="alarmSkip" class="skip" type="button">Pular</button>
+      <button id="silenceAlarm" class="secondary" type="button">Depois</button>
+    </div>
+  </div>
+</div>
+<audio id="doseBeep" preload="auto" playsinline></audio>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="app.js?v=34"></script>
+</body>
+</html>
