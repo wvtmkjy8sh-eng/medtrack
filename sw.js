@@ -1,4 +1,4 @@
-const CACHE="medtrack-v41";
+const CACHE="medtrack-v43";
 const ASSETS=["./","./index.html","./style.css","./app.js","./manifest.json","./icons/icon-192.png","./icons/icon-512.png"];
 const VIBRATE=[400,120,400,120,400,180,800,180,400];
 const IS_IOS=/iphone|ipad|ipod/i.test(self.navigator.userAgent);
@@ -11,13 +11,16 @@ self.addEventListener("activate",e=>e.waitUntil(
   caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim())
 ));
 
-function bypassCache(req){
-  const url=new URL(req.url);
-  return req.method!=="GET" || url.pathname.endsWith("sync.php") || url.search.includes("vapid") || url.search.includes("source=pwa");
+function isSync(req){
+  return new URL(req.url).pathname.endsWith("sync.php");
 }
 self.addEventListener("fetch",e=>{
-  if(bypassCache(e.request)){
-    e.respondWith(fetch(e.request).catch(()=>caches.match("./index.html")));
+  if(isSync(e.request)){
+    if(e.request.method==="GET"||e.request.method==="HEAD"){
+      e.respondWith(fetch(e.request.url,{method:e.request.method,cache:"no-cache",credentials:"same-origin",headers:{Accept:"application/json"}}));
+    }else{
+      e.respondWith(fetch(e.request));
+    }
     return;
   }
   e.respondWith(
@@ -56,26 +59,33 @@ async function idbSet(key,value){
   });
 }
 
-function notifyOptions(payload){
+function notifyOptions(payload,safe){
   const data=payload||{};
-  return {
+  const options={
     body:data.body||"Hora de se medicar ou suplementar.",
     icon:"./icons/icon-192.png",
-    badge:"./icons/icon-192.png",
-    tag:data.tag||"medtrack-dose",
+    tag:(data.tag||"medtrack-dose")+"-"+Date.now(),
     data:{doses:data.doses||[],url:"./"},
-    vibrate:data.vibrate||VIBRATE,
-    requireInteraction:true,
-    renotify:true,
     silent:false,
-    sound:data.sound||"default",
     timestamp:Date.now(),
-    lang:"pt-BR",
-    actions:IS_IOS?[]:[{action:"take",title:"Tomei"},{action:"skip",title:"Pular"}]
+    lang:"pt-BR"
   };
+  if(safe) return options;
+  options.badge="./icons/icon-192.png";
+  options.vibrate=data.vibrate||VIBRATE;
+  if(!IS_IOS){
+    options.requireInteraction=true;
+    options.renotify=true;
+    options.actions=[{action:"take",title:"Tomei"},{action:"skip",title:"Pular"}];
+  }
+  return options;
 }
 function showDoseNotice(payload){
-  return self.registration.showNotification(payload.title||"Hora da dose",notifyOptions(payload));
+  const title=payload.title||"Hora da dose";
+  if(self.navigator.vibrate){
+    try{self.navigator.vibrate(VIBRATE)}catch(_){ }
+  }
+  return self.registration.showNotification(title,notifyOptions(payload)).catch(()=>self.registration.showNotification(title,notifyOptions(payload,true)));
 }
 
 self.addEventListener("push",event=>{

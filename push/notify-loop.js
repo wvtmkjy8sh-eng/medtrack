@@ -55,7 +55,7 @@ async function main() {
     for (const sub of uniqueSubs(subs)) {
       try {
         await webpush.sendNotification(sub, payload, {
-          TTL: 60,
+          TTL: 300,
           urgency: "high",
           headers: { Urgency: "high" },
         });
@@ -112,6 +112,7 @@ async function main() {
     const lastWave = Number(sent._wave) || 0;
     if (lastWave && now - lastWave < REALERT_MS) return;
     sending = true;
+    try{
     const title = due.length > 1 ? `Hora de ${due.length} doses` : `Hora de tomar ${due[0].name}`;
     const body = due.map((d) => `${d.name}${d.dose ? " · " + d.dose : ""} · ${d.time}`).join("\n");
     const payload = JSON.stringify({
@@ -127,7 +128,7 @@ async function main() {
     for (const sub of subs) {
       try {
         await webpush.sendNotification(sub, payload, {
-          TTL: 60,
+          TTL: 300,
           urgency: "high",
           headers: { Urgency: "high" },
         });
@@ -153,7 +154,9 @@ async function main() {
     } else {
       console.warn("push not delivered, will retry");
     }
-    sending = false;
+    } finally {
+      sending = false;
+    }
   };
 
   const armNext = () => {

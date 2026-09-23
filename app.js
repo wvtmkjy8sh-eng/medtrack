@@ -254,22 +254,24 @@ async function enableSystemAlerts(){
     updateAlertSetup();
     return;
   }
+  const vapidPromise=loadVapid();
   const p=await Notification.requestPermission();
   $("#notifyBtn").textContent=p==="granted"?"Ativadas":"Ativar";
   addActivity("notificacoes_permissao",{permission:p});
   if(p!=="granted"){
     updateAlertSetup();
-    return toast("Permissão não concedida. Em Ajustes do iPhone, permita notificações do MedTrack.");
+    return toast(isIOS()?"Permissão não concedida. Em Ajustes do iPhone, permita notificações do MedTrack.":"Permissão não concedida. Permita notificações do MedTrack no navegador.");
   }
   state.settings.reminderMode="notification";
   const reminder=$("#reminderMode");
   if(reminder) reminder.value="notification";
-  const sub=await enableBackgroundPush(false);
+  const sub=await enableBackgroundPush(false,vapidPromise);
   if(!(sub&&sub.endpoint)){
     updateAlertSetup();
     $("#notifyBtn").textContent="Ativar";
-    if(lastPushError==="offline") return toast("Não consegui falar com o servidor de alertas. Confira a conexão e toque de novo.");
-    return toast("A permissão existe, mas o alerta ainda não registrou. Feche o app, abra pelo ícone e toque de novo.");
+    if(lastPushError==="offline"&&navigator.onLine===false) return toast("Sem internet. Conecte e toque em Ativar alertas de novo.");
+    if(lastPushError==="vapid") return toast("O servidor não entregou a chave do alerta. Toque em Ativar alertas de novo.");
+    return toast("A permissão foi concedida, mas o alerta não registrou. Toque em Ativar alertas de novo.");
   }
   await syncReminders(true);
   updateAlertSetup();
@@ -289,7 +291,9 @@ function updateAlertSetup(){
     if(btn) btn.textContent="Como instalar";
   }else{
     if(title) title.textContent="Alertas com a tela desligada";
-    if(text) text.textContent="Ative aqui no app instalado. O bipe interno só toca com o app aberto; o aviso de verdade chega na Central de Notificações com a tela desligada.";
+    if(text) text.textContent=isIOS()
+      ?"Ative aqui no app instalado. O aviso chega na Central de Notificações com a tela desligada."
+      :"Ative no navegador ou no app instalado. O aviso chega na Central de Notificações com a tela desligada.";
     if(btn) btn.textContent="Ativar alertas";
   }
 }
@@ -610,22 +614,30 @@ async function pushDoseNotification(alarmMeds){
   const options={
     body,
     icon:"./icons/icon-192.png",
-    badge:"./icons/icon-192.png",
-    tag:"medtrack-dose",
+    tag:"medtrack-dose-"+Date.now(),
     data:{doses:alarmMeds.map(m=>({id:m.id,time:m._time}))},
-    vibrate:VIBRATE_PATTERN,
-    requireInteraction:true,
-    renotify:true,
     silent:false,
-    sound:"default"
+    lang:"pt-BR"
   };
-  if(!isIOS()) options.actions=[{action:"take",title:"Tomei"},{action:"skip",title:"Pular"}];
+  if(!isIOS()){
+    options.badge="./icons/icon-192.png";
+    options.vibrate=VIBRATE_PATTERN;
+    options.requireInteraction=true;
+    options.actions=[{action:"take",title:"Tomei"},{action:"skip",title:"Pular"}];
+  }
+  let reg=null;
   try{
-    const reg=await navigator.serviceWorker.ready;
+    reg=await navigator.serviceWorker.ready;
     await reg.showNotification(title,options);
   }catch(_){
-    try{new Notification(title,{body,icon:"./icons/icon-192.png"})}catch(__){ }
+    try{
+      if(reg) await reg.showNotification(title,{body,icon:"./icons/icon-192.png",tag:"medtrack-dose-"+Date.now(),silent:false});
+      else new Notification(title,{body,icon:"./icons/icon-192.png"});
+    }catch(__){
+      try{new Notification(title,{body,icon:"./icons/icon-192.png"})}catch(___){ }
+    }
   }
+  if(navigator.vibrate) navigator.vibrate(VIBRATE_PATTERN);
 }
 async function scheduleUpcomingNotifications(){
   if(state.settings.pushEndpoint) return;
@@ -659,6 +671,17 @@ async function scheduleUpcomingNotifications(){
   }catch(_){ }
 }
 let lastPushError="";
+async function loadVapid(){
+  const res=await fetch("sync.php?vapid=1&ts="+Date.now(),{cache:"no-cache",headers:{Accept:"application/json"}});
+  const text=await res.text();
+  let data=null;
+  try{data=JSON.parse(text)}catch(_){data=null}
+  if(!res.ok||!data||!data.publicKey){
+    const error=new Error(!res.ok?"offline":"vapid");
+    throw error;
+  }
+  return data;
+}
 async function waitForServiceWorker(){
   if(!("serviceWorker"in navigator)) return null;
   const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(()=>null);
@@ -678,7 +701,7 @@ function rememberPush(sub){
   localStorage.setItem(KEY,JSON.stringify(state));
   return true;
 }
-async function enableBackgroundPush(forceNew=false){
+async function enableBackgroundPush(forceNew=false,vapidPromise=null){
   lastPushError="";
   if(!("serviceWorker"in navigator)||!("PushManager"in window)){lastPushError="unsupported";return false}
   if(Notification.permission!=="granted"){lastPushError="permission";return false}
@@ -691,10 +714,12 @@ async function enableBackgroundPush(forceNew=false){
       rememberPush(sub);
       return sub;
     }
-    const vapid=await fetch("./sync.php?vapid=1",{cache:"no-store"}).then(r=>{
-      if(!r.ok) throw new Error("offline");
-      return r.json();
-    }).catch(()=>{lastPushError="offline";return null});
+    let vapid=null;
+    try{
+      vapid=await (vapidPromise||loadVapid());
+    }catch(err){
+      lastPushError=(err&&err.message)==="vapid"?"vapid":"offline";
+    }
     if(!vapid||!vapid.publicKey){
       lastPushError=lastPushError||"vapid";
       if(sub&&sub.endpoint){rememberPush(sub);return sub}
@@ -751,7 +776,7 @@ async function syncReminders(sendTest=false){
         settings:state.settings,
         updatedAtMs:stamp,
         test:!!sendTest,
-        replaceSubscriptions:true
+        replaceSubscriptions:false
       })
     });
   }catch(_){ }
@@ -802,7 +827,7 @@ async function reminderCheck(){
   if(!document.hidden) startDoseAlarm(due);
   if(!fresh.length) return;
   markAlarmNotified(fresh);
-  if(document.hidden&&!state.settings.pushEndpoint) await pushDoseNotification(fresh);
+  await pushDoseNotification(fresh);
   addActivity("alerta_dose",{count:fresh.length,names:fresh.map(m=>m.name)});
 }
 if("serviceWorker"in navigator){
