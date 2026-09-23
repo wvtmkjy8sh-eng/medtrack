@@ -2,8 +2,9 @@ const KEY="medtrack-v3";
 const PUSH_API="https://medtrack-push.medtrack-app.workers.dev/";
 function apiUrl(search){
   const host=location.hostname;
-  const remoteHost=host.endsWith("github.io")||host.endsWith("pages.dev");
-  if(remoteHost&&PUSH_API){
+  const apiHost=PUSH_API?new URL(PUSH_API).hostname:"";
+  const remoteHost=PUSH_API&&host!==apiHost&&(host.endsWith("github.io")||host.endsWith("pages.dev")||host.endsWith("workers.dev"));
+  if(remoteHost){
     const url=new URL(PUSH_API);
     if(search) url.search=search.startsWith("?")?search:("?"+search);
     return url.toString();
