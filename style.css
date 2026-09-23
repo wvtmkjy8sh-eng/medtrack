@@ -547,9 +547,9 @@ input:focus,select:focus,textarea:focus{
 }
 
 @media(min-width:901px){
-  .app{padding-bottom:48px}
-  .fab{bottom:28px}
-  .toast{bottom:28px}
+  .app{padding-bottom:calc(36px + var(--nav-h) + var(--bottom-safe))}
+  .fab{bottom:calc(var(--nav-h) + 18px)}
+  .toast{bottom:calc(var(--nav-h) + 20px)}
   .alarm-overlay{place-items:center;padding:24px}
 }
 

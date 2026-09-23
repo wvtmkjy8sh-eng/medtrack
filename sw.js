@@ -1,4 +1,4 @@
-const CACHE="medtrack-v45";
+const CACHE="medtrack-v46";
 const ASSETS=["./","./index.html","./style.css","./app.js","./manifest.json","./icons/icon-192.png","./icons/icon-512.png"];
 const VIBRATE=[400,120,400,120,400,180,800,180,400];
 const IS_IOS=/iphone|ipad|ipod/i.test(self.navigator.userAgent);
