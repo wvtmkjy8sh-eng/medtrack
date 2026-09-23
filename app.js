@@ -261,12 +261,14 @@ async function enableSystemAlerts(){
     updateAlertSetup();
     return toast("Permissão não concedida. Em Ajustes do iPhone, permita notificações do MedTrack.");
   }
-  const sub=await enableBackgroundPush(true);
+  state.settings.reminderMode="notification";
+  const reminder=$("#reminderMode");
+  if(reminder) reminder.value="notification";
+  const sub=await enableBackgroundPush(false);
   if(!(sub&&sub.endpoint)){
-    delete state.settings.pushEndpoint;
-    localStorage.setItem(KEY,JSON.stringify(state));
     updateAlertSetup();
     $("#notifyBtn").textContent="Ativar";
+    if(lastPushError==="offline") return toast("Não consegui falar com o servidor de alertas. Confira a conexão e toque de novo.");
     return toast("A permissão existe, mas o alerta ainda não registrou. Feche o app, abra pelo ícone e toque de novo.");
   }
   await syncReminders(true);
@@ -656,30 +658,49 @@ async function scheduleUpcomingNotifications(){
     });
   }catch(_){ }
 }
+let lastPushError="";
 async function waitForServiceWorker(){
   if(!("serviceWorker"in navigator)) return null;
   const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(()=>null);
   if(!reg) return null;
-  try{await reg.update()}catch(_){ }
-  await navigator.serviceWorker.ready;
-  if(!navigator.serviceWorker.controller){
-    await new Promise(resolve=>{
-      const t=setTimeout(resolve,2500);
-      navigator.serviceWorker.addEventListener("controllerchange",()=>{clearTimeout(t);resolve()},{once:true});
-    });
-  }
+  const ready=await navigator.serviceWorker.ready;
+  if(ready.active&&navigator.serviceWorker.controller) return ready;
+  await new Promise(resolve=>{
+    const t=setTimeout(resolve,4000);
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{clearTimeout(t);resolve()},{once:true});
+  });
   return navigator.serviceWorker.ready;
 }
+function rememberPush(sub){
+  if(!(sub&&sub.endpoint)) return false;
+  state.settings.pushEndpoint=sub.endpoint;
+  state.settings.pushOrigin=location.origin;
+  localStorage.setItem(KEY,JSON.stringify(state));
+  return true;
+}
 async function enableBackgroundPush(forceNew=false){
-  if(!("serviceWorker"in navigator)||!("PushManager"in window)) return false;
-  if(Notification.permission!=="granted") return false;
+  lastPushError="";
+  if(!("serviceWorker"in navigator)||!("PushManager"in window)){lastPushError="unsupported";return false}
+  if(Notification.permission!=="granted"){lastPushError="permission";return false}
   try{
     const reg=await waitForServiceWorker();
-    if(!reg) return false;
-    const vapid=await fetch("./sync.php?vapid=1",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}));
-    if(!vapid.publicKey) return false;
-    if(state.settings.pushOrigin&&state.settings.pushOrigin!==location.origin) forceNew=true;
+    if(!reg||!reg.pushManager||!reg.active){lastPushError="worker";return false}
     let sub=await reg.pushManager.getSubscription();
+    const sameOrigin=!state.settings.pushOrigin||state.settings.pushOrigin===location.origin;
+    if(sub&&sub.endpoint&&sameOrigin&&!forceNew){
+      rememberPush(sub);
+      return sub;
+    }
+    const vapid=await fetch("./sync.php?vapid=1",{cache:"no-store"}).then(r=>{
+      if(!r.ok) throw new Error("offline");
+      return r.json();
+    }).catch(()=>{lastPushError="offline";return null});
+    if(!vapid||!vapid.publicKey){
+      lastPushError=lastPushError||"vapid";
+      if(sub&&sub.endpoint){rememberPush(sub);return sub}
+      return false;
+    }
+    if(!sameOrigin) forceNew=true;
     if(forceNew&&sub){
       try{await sub.unsubscribe()}catch(_){ }
       sub=null;
@@ -696,11 +717,10 @@ async function enableBackgroundPush(forceNew=false){
     if(reg.sync&&reg.sync.register){
       try{await reg.sync.register("medtrack-dose-check")}catch(_){ }
     }
-    state.settings.pushEndpoint=sub.endpoint;
-    state.settings.pushOrigin=location.origin;
-    localStorage.setItem(KEY,JSON.stringify(state));
+    if(!rememberPush(sub)){lastPushError="subscribe";return false}
     return sub;
   }catch(err){
+    lastPushError=(err&&err.message)||"subscribe";
     console.warn("MedTrack: push não inscrito.",err);
     return false;
   }
