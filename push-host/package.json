@@ -1,0 +1,8 @@
+{
+  "name": "medtrack-push-host",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0"
+  }
+}

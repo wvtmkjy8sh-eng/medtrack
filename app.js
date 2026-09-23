@@ -1,4 +1,13 @@
 const KEY="medtrack-v3";
+const PUSH_API="https://medtrack-push.medtrack-app.workers.dev/";
+function apiUrl(search){
+  if(location.hostname.endsWith("github.io")&&PUSH_API){
+    const url=new URL(PUSH_API);
+    if(search) url.search=search.startsWith("?")?search:("?"+search);
+    return url.toString();
+  }
+  return search?("sync.php?"+search.replace(/^\?/,"")):"sync.php";
+}
 let state=JSON.parse(localStorage.getItem(KEY)||'{"meds":[],"history":[],"settings":{"reminderMode":"notification","notified":{}}}');
 state.meds ??= []; state.history ??= []; state.settings ??= {reminderMode:"notification",notified:{},theme:"system"};
 state.settings.theme ??= "system";
@@ -672,7 +681,7 @@ async function scheduleUpcomingNotifications(){
 }
 let lastPushError="";
 async function loadVapid(){
-  const res=await fetch("sync.php?vapid=1&ts="+Date.now(),{cache:"no-cache",headers:{Accept:"application/json"}});
+  const res=await fetch(apiUrl("vapid=1&ts="+Date.now()),{cache:"no-cache",headers:{Accept:"application/json"}});
   const text=await res.text();
   let data=null;
   try{data=JSON.parse(text)}catch(_){data=null}
@@ -763,7 +772,7 @@ async function syncReminders(sendTest=false){
     const stamp=Date.now();
     state.settings.cloudUpdatedAt=stamp;
     localStorage.setItem(KEY,JSON.stringify(state));
-    await fetch("sync.php",{
+    await fetch(apiUrl(""),{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
@@ -783,7 +792,7 @@ async function syncReminders(sendTest=false){
 }
 async function hydrateFromServer(){
   try{
-    const remote=await fetch("sync.php",{cache:"no-store"}).then(r=>r.json());
+    const remote=await fetch(apiUrl(""),{cache:"no-store"}).then(r=>r.json());
     if(!remote) return;
     const remoteMeds=Array.isArray(remote.meds)?remote.meds:[];
     const remoteStamp=Number(remote.updatedAtMs)||0;

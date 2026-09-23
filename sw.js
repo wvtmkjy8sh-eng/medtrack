@@ -1,4 +1,4 @@
-const CACHE="medtrack-v43";
+const CACHE="medtrack-v45";
 const ASSETS=["./","./index.html","./style.css","./app.js","./manifest.json","./icons/icon-192.png","./icons/icon-512.png"];
 const VIBRATE=[400,120,400,120,400,180,800,180,400];
 const IS_IOS=/iphone|ipad|ipod/i.test(self.navigator.userAgent);
@@ -15,6 +15,8 @@ function isSync(req){
   return new URL(req.url).pathname.endsWith("sync.php");
 }
 self.addEventListener("fetch",e=>{
+  const host=new URL(e.request.url).hostname;
+  if(host.endsWith("workers.dev")) return;
   if(isSync(e.request)){
     if(e.request.method==="GET"||e.request.method==="HEAD"){
       e.respondWith(fetch(e.request.url,{method:e.request.method,cache:"no-cache",credentials:"same-origin",headers:{Accept:"application/json"}}));
