@@ -121,15 +121,12 @@ async function checkStoredDoses(){
   if(!schedule||schedule.reminderMode==="visual") return;
   const taken=new Set(schedule.taken||[]);
   const now=Date.now();
-  const due=(schedule.doses||[]).filter(d=>d&&!taken.has(d.key)&&(Number(d.at)||0)<=now);
-  if(!due.length) return;
   const last=schedule.lastAlert||{};
-  const wave=Number(last._wave)||0;
-  if(wave&&now-wave<60*1000) return;
+  const due=(schedule.doses||[]).filter(d=>d&&!taken.has(d.key)&&!last[d.key]&&(Number(d.at)||0)<=now);
+  if(!due.length) return;
   const visible=await self.clients.matchAll({type:"window",includeUncontrolled:true}).then(list=>list.some(c=>c.visibilityState==="visible")).catch(()=>false);
   if(visible) return;
   due.forEach(d=>{last[d.key]=now});
-  last._wave=now;
   schedule.lastAlert=last;
   await idbSet("schedule",schedule);
   const body=due.map(d=>`${d.name}${d.dose?" · "+d.dose:""} · ${d.time}`).join("\n");

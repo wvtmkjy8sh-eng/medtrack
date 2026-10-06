@@ -6,7 +6,6 @@ const dataDir = path.join(root, "data");
 const vapidFile = path.join(dataDir, "vapid.json");
 const stateFile = path.join(dataDir, "push-state.json");
 const sentFile = path.join(dataDir, "push-sent.json");
-const REALERT_MS = 60 * 1000;
 const LEAD_MS = 800;
 const VIBRATE = [400, 120, 400, 120, 400, 180, 800, 180, 400];
 
@@ -102,15 +101,14 @@ async function main() {
     const taken = new Set(Array.isArray(state.taken) ? state.taken : []);
     if (!subs.length || !doses.length) return;
     const now = Date.now();
+    const sentNow = readJson(sentFile, {});
     const due = doses.filter((d) => {
-      if (!d || taken.has(d.key)) return false;
+      if (!d || taken.has(d.key) || sentNow[d.key]) return false;
       const at = Number(d.at) || 0;
       return at && now >= at - LEAD_MS;
     });
     if (!due.length) return;
     const sent = readJson(sentFile, {});
-    const lastWave = Number(sent._wave) || 0;
-    if (lastWave && now - lastWave < REALERT_MS) return;
     sending = true;
     try{
     const title = due.length > 1 ? `Hora de ${due.length} doses` : `Hora de tomar ${due[0].name}`;
@@ -143,10 +141,8 @@ async function main() {
       }
     }
     if (delivered) {
-      sent._wave = now;
       due.forEach((d) => { sent[d.key] = now; });
       Object.keys(sent).forEach((k) => {
-        if (k === "_wave") return;
         if (now - Number(sent[k] || 0) > 48 * 3600 * 1000) delete sent[k];
       });
       writeJson(sentFile, sent);
@@ -167,9 +163,9 @@ async function main() {
     const open = (Array.isArray(state.doses) ? state.doses : []).filter((d) => d && !taken.has(d.key));
     const dueNow = open.filter((d) => (Number(d.at) || 0) <= now + LEAD_MS);
     const next = open.map((d) => Number(d.at) || 0).filter((at) => at > now - LEAD_MS).sort((a, b) => a - b)[0];
-    const lastWave = Number(readJson(sentFile, {})._wave) || 0;
+    const sentMap = readJson(sentFile, {});
     let wait = null;
-    if (dueNow.length) wait = lastWave ? Math.max(0, lastWave + REALERT_MS - now) : 0;
+    if (dueNow.some((d) => !sentMap[d.key])) wait = 0;
     else if (next) wait = Math.max(0, next - now - LEAD_MS);
     if (wait == null) return;
     nextTimer = setTimeout(() => {

@@ -1,6 +1,5 @@
 import { buildPushPayload } from "@block65/webcrypto-web-push";
 
-const REALERT_MS = 60 * 1000;
 const LEAD_MS = 800;
 const VIBRATE = [400, 120, 400, 120, 400, 180, 800, 180, 400];
 const CORS = {
@@ -96,15 +95,14 @@ async function sendDue(env) {
   const subs = uniqueSubs(state.subscriptions);
   const taken = new Set(Array.isArray(state.taken) ? state.taken : []);
   const now = Date.now();
+  const alreadySent = state.sent && typeof state.sent === "object" ? state.sent : {};
   const due = (Array.isArray(state.doses) ? state.doses : []).filter((dose) => {
-    if (!dose || taken.has(dose.key)) return false;
+    if (!dose || taken.has(dose.key) || alreadySent[dose.key]) return false;
     const at = Number(dose.at) || 0;
     return at && now >= at - LEAD_MS;
   });
   if (!subs.length || !due.length) return;
   const sent = state.sent && typeof state.sent === "object" ? state.sent : {};
-  const lastWave = Number(sent._wave) || 0;
-  if (lastWave && now - lastWave < REALERT_MS) return;
   const title = due.length > 1 ? `Hora de ${due.length} doses` : `Hora de tomar ${due[0].name}`;
   const body = due.map((dose) => `${dose.name}${dose.dose ? " · " + dose.dose : ""} · ${dose.time}`).join("\n");
   const result = await deliver(env, subs, {
@@ -117,10 +115,9 @@ async function sendDue(env) {
   });
   state.subscriptions = result.kept;
   if (result.delivered) {
-    sent._wave = now;
     due.forEach((dose) => { sent[dose.key] = now; });
     Object.keys(sent).forEach((key) => {
-      if (key !== "_wave" && now - Number(sent[key] || 0) > 48 * 3600 * 1000) delete sent[key];
+      if (now - Number(sent[key] || 0) > 48 * 3600 * 1000) delete sent[key];
     });
     state.sent = sent;
   }

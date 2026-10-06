@@ -447,7 +447,6 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPro
 $("#installBtn").onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$("#installBtn").classList.add("hidden")};
 
 let alarmCtx=null, alarmTimer=null, alarmStopTimer=null, alarmNotifyTimer=null, alarmNodes=[], pendingAlarmDoses=[];
-const REALERT_MS=60*1000;
 const VIBRATE_PATTERN=[400,120,400,120,400,180,800,180,400];
 function unlockAlarmAudio(){
   try{
@@ -590,7 +589,7 @@ $("#silenceAlarm")?.addEventListener("click",()=>{
   unlockAlarmAudio();
   markAlarmNotified(pendingAlarmDoses);
   stopDoseAlarm();
-  toast("Tudo bem. Te chamo de novo em 1 minuto se ainda não registrar.");
+  toast("Tudo bem. Registre a dose quando tomar.");
 });
 $("#alarmTake")?.addEventListener("click",()=>{unlockAlarmAudio();applyAlarmRecords("taken")});
 $("#alarmSkip")?.addEventListener("click",()=>{unlockAlarmAudio();applyAlarmRecords("skipped")});
@@ -827,14 +826,9 @@ async function reminderCheck(){
   pruneNotified();
   const due=dueDosesNow();
   if(!due.length) return;
-  const now=Date.now();
   state.settings.notified??={};
   const fresh=due.filter(m=>{
-    const last=state.settings.notified[m.key];
-    if(last===true) return true;
-    if(!last) return true;
-    const ts=Number(last)||0;
-    return now-ts>=REALERT_MS;
+    return !state.settings.notified[m.key];
   });
   if(!document.hidden) startDoseAlarm(due);
   if(!fresh.length) return;
