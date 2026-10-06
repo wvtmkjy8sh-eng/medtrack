@@ -109,7 +109,12 @@ self.addEventListener("sync",event=>{
 self.addEventListener("message",event=>{
   const data=event.data||{};
   if(data.type==="MEDTRACK_STORE_SCHEDULE"){
-    event.waitUntil(idbSet("schedule",data.schedule||{}));
+    event.waitUntil((async()=>{
+      const prev=await idbGet("schedule");
+      const next=data.schedule||{};
+      next.lastAlert=Object.assign({},prev&&prev.lastAlert,next.lastAlert);
+      await idbSet("schedule",next);
+    })());
   }
   if(data.type==="MEDTRACK_CHECK_DOSES"){
     event.waitUntil(checkStoredDoses());
@@ -118,7 +123,7 @@ self.addEventListener("message",event=>{
 
 async function checkStoredDoses(){
   const schedule=await idbGet("schedule");
-  if(!schedule||schedule.reminderMode==="visual") return;
+  if(!schedule||schedule.reminderMode==="visual"||schedule.hasPush) return;
   const taken=new Set(schedule.taken||[]);
   const now=Date.now();
   const last=schedule.lastAlert||{};

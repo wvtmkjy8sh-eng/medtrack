@@ -618,6 +618,7 @@ function dueDosesNow(){
 }
 async function pushDoseNotification(alarmMeds){
   if(state.settings.reminderMode==="visual") return;
+  if(state.settings.pushEndpoint) return;
   if(!("Notification"in window)||Notification.permission!=="granted") return;
   const copy=alarmCopy(alarmMeds);
   const title=copy.title;
@@ -763,7 +764,7 @@ async function enableBackgroundPush(forceNew=false,vapidPromise=null){
 }
 async function syncReminders(sendTest=false){
   const pack=upcomingDosePayload();
-  const schedule={...pack,reminderMode:state.settings.reminderMode||"notification"};
+  const schedule={...pack,reminderMode:state.settings.reminderMode||"notification",hasPush:!!state.settings.pushEndpoint};
   if("serviceWorker"in navigator){
     const reg=await navigator.serviceWorker.ready.catch(()=>null);
     reg?.active?.postMessage({type:"MEDTRACK_STORE_SCHEDULE",schedule});
